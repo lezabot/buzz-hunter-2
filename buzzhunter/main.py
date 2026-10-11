@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 from .core import entry_allowed, evaluate
-from .market import CoinbaseFeed
+from .market import CoinbaseFeed, CoinbaseRateLimitError
 from .portfolio import PaperPortfolio
 from .trends import TrendsFeed
 
@@ -39,13 +39,17 @@ def scan(cfg, feed, trends, portfolio, status_path):
     now = time.time()
     symbols = feed.products(int(cfg['universe_limit']), cfg.get('watchlist', []))
     # Positions must be checked even if they fall outside the selected universe.
-    symbols = list(dict.fromkeys(symbols + list(portfolio.state['positions'])))
+    symbols = list(dict.fromkeys(list(portfolio.state['positions']) + symbols))
     log.info('MARKET SCAN START symbols=%d held=%d', len(symbols), len(portfolio.state['positions']))
     prices, markets = {}, {}
+    throttled = False
     for symbol in symbols:
         try:
             m = feed.market(symbol)
             prices[symbol], markets[symbol] = m['price'], m
+        except CoinbaseRateLimitError as exc:
+            throttled = True
+            log.warning('Skipping %s after throttling retries: %s', symbol, exc)
         except Exception as exc:
             log.warning('Skipping %s: %s', symbol, exc)
     missing_held = set(portfolio.state['positions']) - set(prices)
@@ -62,7 +66,7 @@ def scan(cfg, feed, trends, portfolio, status_path):
         candidates.append((signal.score, symbol, signal, m))
     candidates.sort(reverse=True, key=lambda row: row[0])
     purchased = []
-    if not missing_held and not portfolio.halted(prices):
+    if not missing_held and not throttled and not portfolio.halted(prices):
         for score, symbol, signal, m in candidates:
             if not entry_allowed(signal, m, cfg):
                 continue
@@ -75,7 +79,7 @@ def scan(cfg, feed, trends, portfolio, status_path):
               'mode': 'paper', 'markets_checked': len(markets), 'markets_requested': len(symbols),
               'cash_usd': round(portfolio.state['cash'], 2), 'equity_usd': round(portfolio.equity(prices), 2),
               'positions': list(portfolio.state['positions']), 'paper_buys': purchased,
-              'halted_for_day': portfolio.halted(prices), 'missing_held_prices': sorted(missing_held),
+              'halted_for_day': portfolio.halted(prices), 'missing_held_prices': sorted(missing_held), 'coinbase_throttled': throttled,
               'top_signals': top}
     write_status(status_path, status)
     log.info('MARKET SCAN COMPLETE checked=%d equity=$%.2f cash=$%.2f positions=%d paper_buys=%d top=%s',

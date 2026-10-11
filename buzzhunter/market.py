@@ -1,24 +1,60 @@
-"""Public Coinbase Exchange market data; no credentials or orders."""
+"""Coinbase public market feed with paced requests and bounded 429 retries."""
+import logging
+import random
+import time
 import requests
 
 BASE = 'https://api.exchange.coinbase.com'
+log = logging.getLogger('buzzhunter')
+
+class CoinbaseRateLimitError(RuntimeError):
+    """Coinbase throttled requests after bounded retries."""
 
 class CoinbaseFeed:
-    def __init__(self):
+    def __init__(self, min_interval_seconds=0.55, max_retries=4):
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'BuzzHunterPaper/2.0', 'Accept': 'application/json'})
+        self.session.headers.update({'User-Agent': 'BuzzHunterPaper/2.1', 'Accept': 'application/json'})
+        self.min_interval = min_interval_seconds
+        self.max_retries = max_retries
+        self._next_request = 0.0
 
     def get(self, path, params=None):
-        r = self.session.get(BASE + path, params=params, timeout=12)
-        r.raise_for_status()
-        return r.json()
+        for attempt in range(self.max_retries + 1):
+            wait = self._next_request - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            self._next_request = time.monotonic() + self.min_interval
+            try:
+                response = self.session.get(BASE + path, params=params, timeout=12)
+            except (requests.Timeout, requests.ConnectionError):
+                if attempt == self.max_retries:
+                    raise
+                delay = min(12, 1.5 * (2 ** attempt)) + random.uniform(0, 0.3)
+                log.warning('Coinbase network issue %s; retrying in %.1fs', path, delay)
+                time.sleep(delay)
+                continue
+            if response.status_code in (429, 503):
+                if attempt == self.max_retries:
+                    raise CoinbaseRateLimitError('Coinbase throttling persisted for ' + path)
+                retry_after = response.headers.get('Retry-After', '')
+                try:
+                    delay = float(retry_after)
+                except (ValueError, TypeError):
+                    delay = 1.5 * (2 ** attempt)
+                delay = min(30, max(1.0, delay)) + random.uniform(0, 0.3)
+                log.warning('Coinbase HTTP %s %s; retrying in %.1fs (%d/%d)',
+                            response.status_code, path, delay, attempt + 1, self.max_retries)
+                time.sleep(delay)
+                continue
+            response.raise_for_status()
+            return response.json()
+        raise CoinbaseRateLimitError('Coinbase request failed for ' + path)
 
     def products(self, limit, watchlist):
         rows = self.get('/products')
         allowed = {r['id']: r for r in rows if r.get('quote_currency') == 'USD' and
                    r.get('status') == 'online' and not r.get('trading_disabled', False)}
         selected = [s for s in watchlist if s in allowed]
-        # Use liquid watchlist first, then alphabetically sorted eligible products.
         selected += [s for s in sorted(allowed) if s not in selected]
         return selected[:limit]
 
