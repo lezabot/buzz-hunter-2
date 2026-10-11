@@ -1,0 +1,32 @@
+mode: paper
+starting_cash: 1000
+poll_seconds: 120
+universe_limit: 35
+watchlist: [BTC-USD, ETH-USD, SOL-USD, DOGE-USD, PEPE-USD]
+new_listing_days: 45
+risk:
+  trade_usd: 100
+  max_positions: 5
+  max_exposure_usd: 500
+  max_daily_loss_usd: 75
+  stop_loss_pct: 0.06
+  take_profit_pct: 0.12
+  trailing_stop_pct: 0.07
+  assumed_fee_pct_per_side: 0.006
+  assumed_slippage_pct_per_side: 0.003
+  max_spread_pct: 0.015
+  min_24h_quote_volume_usd: 1000000
+  max_entry_price_change_24h_pct: 35
+signals:
+  minimum_score: 70
+  cooldown_hours: 24
+  min_history_points: 12
+trends:
+  enabled: true
+  refresh_seconds: 7200
+  terms:
+    BTC-USD: Bitcoin
+    ETH-USD: Ethereum
+    SOL-USD: Solana crypto
+    DOGE-USD: Dogecoin
+    PEPE-USD: Pepe coin crypto
