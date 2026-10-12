@@ -1,8 +1,9 @@
-"""Buzz Hunter 2.0: continuously running PAPER-ONLY Coinbase signal scanner."""
+"""Buzz Hunter paper-only scanner with explicit startup diagnostics."""
 import argparse
 import json
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -37,8 +38,8 @@ def validate(cfg):
 
 def scan(cfg, feed, trends, portfolio, status_path):
     now = time.time()
+    log.info('SCAN STEP: requesting product universe')
     symbols = feed.products(int(cfg['universe_limit']), cfg.get('watchlist', []))
-    # Positions must be checked even if they fall outside the selected universe.
     symbols = list(dict.fromkeys(symbols + list(portfolio.state['positions'])))
     log.info('MARKET SCAN START symbols=%d held=%d', len(symbols), len(portfolio.state['positions']))
     prices, markets = {}, {}
@@ -53,7 +54,9 @@ def scan(cfg, feed, trends, portfolio, status_path):
         log.error('Missing prices for held positions %s; no new trades this scan', sorted(missing_held))
     portfolio.day_check(prices, now)
     portfolio.exits(prices, now)
+    log.info('SCAN STEP: requesting Google Trends scores')
     trend_scores = trends.scores([s for s in cfg.get('watchlist', []) if s in markets])
+    log.info('SCAN STEP: Trends scores available=%d', len(trend_scores))
     candidates = []
     for symbol, m in markets.items():
         if symbol in portfolio.state['positions']:
@@ -89,18 +92,28 @@ def main():
     parser.add_argument('--config', default='config.yaml')
     parser.add_argument('--once', action='store_true', help='Run one scan then exit, for diagnostics only')
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s', force=True)
-    log.info('BUZZ HUNTER 2.0 STARTING - PAPER MODE ONLY')
-    cfg = yaml.safe_load(Path(args.config).read_text())
-    validate(cfg)
-    data_dir = Path(os.getenv('BUZZ_DATA_DIR', '/data' if Path('/data').is_dir() else 'data'))
-    log.info('Data directory: %s; poll every %ss; Google Trends enabled=%s',
-             data_dir.resolve(), cfg['poll_seconds'], cfg.get('trends', {}).get('enabled', True))
-    if str(data_dir) != '/data':
-        log.warning('No /data volume detected; Railway redeployments may reset simulated account. Attach volume at /data.')
-    portfolio = PaperPortfolio(data_dir / 'paper_state.json', cfg)
-    feed, trends = CoinbaseFeed(), TrendsFeed(cfg)
-    status_path = data_dir / 'status.json'
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s', force=True, stream=sys.stdout)
+    log.info('BUZZ HUNTER 3.0 STARTING - PAPER MODE ONLY')
+    try:
+        log.info('STARTUP STEP 1: loading config from %s (cwd=%s)', args.config, os.getcwd())
+        cfg = yaml.safe_load(Path(args.config).read_text())
+        log.info('STARTUP STEP 2: validating config')
+        validate(cfg)
+        log.info('STARTUP STEP 3: selecting data directory')
+        data_dir = Path(os.getenv('BUZZ_DATA_DIR', '/data' if Path('/data').is_dir() else 'data'))
+        log.info('Data directory: %s; poll every %ss; Google Trends enabled=%s',
+                 data_dir.resolve(), cfg['poll_seconds'], cfg.get('trends', {}).get('enabled', True))
+        if str(data_dir) != '/data':
+            log.warning('No /data volume detected; Railway redeployments may reset simulated account. Attach volume at /data.')
+        log.info('STARTUP STEP 4: initializing paper portfolio')
+        portfolio = PaperPortfolio(data_dir / 'paper_state.json', cfg)
+        log.info('STARTUP STEP 5: initializing Coinbase and Google Trends feeds')
+        feed, trends = CoinbaseFeed(), TrendsFeed(cfg)
+        status_path = data_dir / 'status.json'
+        log.info('STARTUP COMPLETE; beginning paper-only scan loop')
+    except Exception:
+        log.exception('STARTUP FAILED')
+        raise
     failures = 0
     while True:
         try:
