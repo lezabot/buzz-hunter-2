@@ -1,12 +1,11 @@
-"""Optional, cached Google Trends confirmation; failures yield missing data, not false zero."""
+"""Google Trends confirmation for paper entries; unavailable data blocks buys."""
 import logging
 import time
 
 log = logging.getLogger('buzzhunter')
-
-# Use unambiguous search terms; cashtags and short tickers often mean unrelated things.
 TERMS = {'BTC-USD': 'Bitcoin', 'ETH-USD': 'Ethereum', 'SOL-USD': 'Solana crypto',
          'DOGE-USD': 'Dogecoin', 'PEPE-USD': 'Pepe coin crypto'}
+
 
 class TrendsFeed:
     def __init__(self, config):
@@ -39,7 +38,6 @@ class TrendsFeed:
                 values = [float(v) for v in frame[term].tolist()]
                 if len(values) < 12:
                     continue
-                # Relative acceleration, not cross-coin popularity; clamp noise from tiny baselines.
                 recent = sum(values[-6:]) / 6
                 previous = sum(values[-12:-6]) / 6
                 if previous < 5:
@@ -50,8 +48,8 @@ class TrendsFeed:
             self.cache = result
             self.warned = False
         except Exception as exc:
-            self.cache = {}  # stale values are not treated as current
+            self.cache = {}
             if not self.warned:
-                log.warning('Google Trends unavailable; market-only scoring: %s', exc)
+                log.warning('Google Trends unavailable; new paper entries blocked: %s', exc)
                 self.warned = True
         return dict(self.cache)

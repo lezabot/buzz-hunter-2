@@ -1,11 +1,12 @@
-"""Pure scoring rules; missing Trends data cannot block market-only mode."""
+"""Paper-only entry scoring: valid Google Trends required for all new buys."""
 from dataclasses import dataclass
-from math import log1p
 from datetime import datetime, timezone
+from math import isfinite, log1p
 
 
 def utc_day(ts):
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d')
+
 
 @dataclass
 class Signal:
@@ -14,25 +15,36 @@ class Signal:
     trend_score: float | None
 
 
+def _clamp(value):
+    return max(0.0, min(100.0, float(value)))
+
+
 def evaluate(market, trend_score=None):
-    change = market['change_24h_pct']
-    volume = market['volume_usd_24h']
-    # 24h momentum is a coarse signal, not an early-move guarantee.
-    momentum = max(0, min(100, 40 + change * 2))
-    activity = max(0, min(100, 20 + 17 * log1p(max(0, volume) / 1e6)))
-    market_score = .65 * momentum + .35 * activity
-    liquidity = market['liquidity_score']
-    base = .4 * market_score + .3 * liquidity
-    if trend_score is None:
-        score = base / .7
-    else:
-        score = base + .3 * trend_score
-    return Signal(score, market_score, trend_score)
+    """Score weights: Trends 45%, momentum 25%, volume 20%, liquidity 10%."""
+    change = float(market['change_24h_pct'])
+    volume = float(market['volume_usd_24h'])
+    momentum = _clamp(40 + change * 2)
+    activity = _clamp(20 + 17 * log1p(max(0, volume) / 1e6))
+    liquidity = _clamp(market['liquidity_score'])
+    market_score = (25 * momentum + 20 * activity + 10 * liquidity) / 55
+    if trend_score is None or not isfinite(float(trend_score)):
+        return Signal(0.0, market_score, None)
+    trend = _clamp(trend_score)
+    score = .45 * trend + .25 * momentum + .20 * activity + .10 * liquidity
+    return Signal(score, market_score, trend)
 
 
 def entry_allowed(signal, market, config):
     s, r = config['signals'], config['risk']
-    return (signal.score >= s['minimum_score'] and
-            0 <= market['change_24h_pct'] <= r['max_entry_price_change_24h_pct'] and
-            market['volume_usd_24h'] >= r['min_24h_quote_volume_usd'] and
-            market['spread_pct'] <= r['max_spread_pct'] and market['price'] > 0)
+    price = float(market['price'])
+    slip = float(r['assumed_slippage_pct_per_side'])
+    return (config.get('mode') == 'paper'
+            and config.get('trends', {}).get('enabled', True)
+            and signal.trend_score is not None
+            and isfinite(signal.score)
+            and signal.score >= s['minimum_score']
+            and 0 < price < 1
+            and price * (1 + slip) < 1
+            and 0 <= market['change_24h_pct'] <= r['max_entry_price_change_24h_pct']
+            and market['volume_usd_24h'] >= r['min_24h_quote_volume_usd']
+            and market['spread_pct'] <= r['max_spread_pct'])
