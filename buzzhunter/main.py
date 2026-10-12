@@ -44,7 +44,27 @@ def scan(cfg,feed,trends,portfolio,status_path):
     if missing_held: log.error('Missing held prices %s; no new buys',sorted(missing_held))
     portfolio.day_check(prices,now)
     portfolio.exits(prices,now)
-    trend_scores=trends.scores([s for s in cfg.get('watchlist',[]) if s in markets])
+    # Request Trends only for a bounded shortlist of markets that meet hard entry gates.
+    # This avoids spending Google requests on coins that cannot be purchased.
+    risk = cfg['risk']
+    preliminary = []
+    for symbol, market in markets.items():
+        if symbol in portfolio.state['positions']:
+            continue
+        price = market['price']
+        if not (0 < price < 1 and price * (1 + risk['assumed_slippage_pct_per_side']) < 1):
+            continue
+        if not (0 <= market['change_24h_pct'] <= risk['max_entry_price_change_24h_pct']):
+            continue
+        if market['volume_usd_24h'] < risk['min_24h_quote_volume_usd'] or market['spread_pct'] > risk['max_spread_pct']:
+            continue
+        preliminary.append((evaluate(market).market_score, symbol))
+    preliminary.sort(reverse=True)
+    trend_limit = max(1, min(10, int(cfg.get('trends', {}).get('max_symbols_per_refresh', 8))))
+    shortlist = [symbol for _, symbol in preliminary[:trend_limit]]
+    trend_scores = trends.scores(shortlist)
+    log.info('ENTRY PRECHECK candidates=%d trends_requested=%d trends_confirmed=%d',
+             len(preliminary), len(shortlist), len(trend_scores))
     candidates=[]
     for symbol,m in markets.items():
         if symbol in portfolio.state['positions']: continue
