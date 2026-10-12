@@ -57,33 +57,39 @@ class TrendsFeed:
             log.warning("Google Trends client unavailable; paper entries without valid cache blocked: %s", exc)
             return valid
 
-        for i, symbol in enumerate(symbols):
+        # Batch up to five terms per Google request instead of one request per coin.
+        # Scores measure within-term acceleration, not cross-term popularity.
+        requests = []
+        for symbol in symbols:
             term = self.config.get("terms", {}).get(symbol, TERMS.get(symbol))
-            if not term:
-                continue
-            if i:
+            if term:
+                requests.append((symbol, term))
+        for offset in range(0, len(requests), 5):
+            batch = requests[offset:offset + 5]
+            if offset:
                 time.sleep(self.request_spacing_seconds + random.uniform(0, 2))
             try:
-                client.build_payload([term], timeframe="now 7-d", geo="US")
+                client.build_payload([term for _, term in batch], timeframe="now 7-d", geo="US")
                 frame = client.interest_over_time()
-                if frame is None or frame.empty or term not in frame:
-                    self.cache.pop(symbol, None)
-                    self.cache_time.pop(symbol, None)
-                    continue
-                values = [float(v) for v in frame[term].tolist()]
-                if len(values) < 12:
-                    self.cache.pop(symbol, None)
-                    self.cache_time.pop(symbol, None)
-                    continue
-                recent = sum(values[-6:]) / 6
-                previous = sum(values[-12:-6]) / 6
-                if previous < 5:
-                    self.cache.pop(symbol, None)
-                    self.cache_time.pop(symbol, None)
-                    continue
-                growth = (recent - previous) / previous
-                self.cache[symbol] = max(0.0, min(100.0, 50.0 + growth * 100.0))
-                self.cache_time[symbol] = time.time()
+                for symbol, term in batch:
+                    if frame is None or frame.empty or term not in frame:
+                        self.cache.pop(symbol, None)
+                        self.cache_time.pop(symbol, None)
+                        continue
+                    values = [float(v) for v in frame[term].tolist()]
+                    if len(values) < 12:
+                        self.cache.pop(symbol, None)
+                        self.cache_time.pop(symbol, None)
+                        continue
+                    recent = sum(values[-6:]) / 6
+                    previous = sum(values[-12:-6]) / 6
+                    if previous < 5:
+                        self.cache.pop(symbol, None)
+                        self.cache_time.pop(symbol, None)
+                        continue
+                    growth = (recent - previous) / previous
+                    self.cache[symbol] = max(0.0, min(100.0, 50.0 + growth * 100.0))
+                    self.cache_time[symbol] = time.time()
                 self.warned = False
             except Exception as exc:
                 self.next_refresh = time.time() + self.backoff_seconds
