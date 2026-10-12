@@ -75,7 +75,10 @@ def scan(cfg,feed,trends,portfolio,status_path):
             'cash_usd':round(portfolio.state['cash'],2),'equity_usd':round(portfolio.equity(prices),2),
             'positions':list(portfolio.state['positions']),'paper_buys':purchased,
             'halted_for_day':portfolio.halted(prices),'missing_held_prices':sorted(missing_held),
-            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top}
+            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top,
+            'trends_confirmed_symbols':sorted(trend_scores),
+            'trends_coverage_count':len(trend_scores),
+            'entry_eligible_count':sum(entry_allowed(sig,m,cfg) for _,_,sig,m in candidates)}
     write_status(status_path,status)
     log.info('MARKET SCAN COMPLETE checked=%d equity=$%.2f cash=$%.2f positions=%d paper_buys=%d',len(markets),status['equity_usd'],status['cash_usd'],len(status['positions']),len(purchased))
     return status
@@ -89,7 +92,12 @@ def main():
     cfg=yaml.safe_load(Path(args.config).read_text())
     validate(cfg)
     data_dir=Path(os.getenv('BUZZ_DATA_DIR','/data' if Path('/data').is_dir() else 'data'))
-    if str(data_dir)!='/data': log.warning('No /data volume; redeploy may reset paper account')
+    if not data_dir.is_dir():
+        log.warning('Paper data directory %s does not exist yet; checking persistent storage configuration', data_dir)
+    log.info('Paper data directory: %s (RAILWAY_VOLUME_MOUNT_PATH=%s)', data_dir, os.getenv('RAILWAY_VOLUME_MOUNT_PATH', 'unset'))
+    mounted = os.getenv('RAILWAY_VOLUME_MOUNT_PATH')
+    if os.getenv('RAILWAY_PROJECT_ID') and (not mounted or Path(mounted).resolve() != data_dir.resolve()):
+        log.warning('Paper data directory does not match Railway volume mount; persistence may be at risk')
     portfolio=PaperPortfolio(data_dir/'paper_state.json',cfg)
     feed,trends=CoinbaseFeed(),TrendsFeed(cfg)
     while True:
