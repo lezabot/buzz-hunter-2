@@ -9,7 +9,7 @@ import yaml
 from .core import entry_allowed, evaluate
 from .market import CoinbaseFeed, CoinbaseRateLimitError
 from .portfolio import PaperPortfolio
-from .trends import TrendsFeed
+from .trends import TrendsFeed, TERMS
 from .strategy3 import confirm
 log = logging.getLogger('buzzhunter')
 def write_status(path, data):
@@ -61,7 +61,9 @@ def scan(cfg,feed,trends,portfolio,status_path):
         preliminary.append((evaluate(market).market_score, symbol))
     preliminary.sort(reverse=True)
     trend_limit = max(1, min(10, int(cfg.get('trends', {}).get('max_symbols_per_refresh', 8))))
-    shortlist = [symbol for _, symbol in preliminary[:trend_limit]]
+    supported = cfg.get('trends', {}).get('terms', {})
+    shortlist = [symbol for _, symbol in preliminary
+                 if supported.get(symbol) or TERMS.get(symbol)][:trend_limit]
     trend_scores = trends.scores(shortlist)
     log.info('ENTRY PRECHECK candidates=%d trends_requested=%d trends_confirmed=%d',
              len(preliminary), len(shortlist), len(trend_scores))
