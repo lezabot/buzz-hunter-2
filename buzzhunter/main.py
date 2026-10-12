@@ -50,7 +50,8 @@ def scan(cfg,feed,trends,portfolio,status_path):
     for sale in new_sales:
         log.info('PAPER SALE symbol=%s quantity=%.10f price=%.8f pnl=%.2f reason=%s',sale['symbol'],sale['qty'],sale['price'],sale['pnl'],sale['reason'])
     for sale in new_sales:
-        send_alert('Buzz Hunter PAPER SALE | '+str(sale.get('symbol'))+' | Quantity '+str(sale.get('qty'))+' | Price [s for s in cfg.get('watchlist',[]) if s in markets])
+        send_alert("PAPER SALE {} price {} pnl {}".format(sale.get("symbol"),sale.get("price"),sale.get("pnl")))
+    trend_scores=trends.scores([x for x in cfg.get("watchlist",[]) if x in markets])
     candidates=[]
     for symbol,m in markets.items():
         if symbol in portfolio.state['positions']: continue
