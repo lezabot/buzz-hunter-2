@@ -1,7 +1,7 @@
 mode: paper
 starting_cash: 1000
 poll_seconds: 120
-universe_limit: 150
+universe_limit: 100
 watchlist: [BTC-USD, ETH-USD, SOL-USD, DOGE-USD, PEPE-USD]
 new_listing_days: 45
 risk:
