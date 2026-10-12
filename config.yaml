@@ -34,3 +34,13 @@ trends:
     SOL-USD: Solana crypto
     DOGE-USD: Dogecoin
     PEPE-USD: Pepe coin crypto
+advanced_signals:
+  enabled: true
+  max_confirmation_checks_per_scan: 5
+  min_rvol: 2.5
+  min_momentum_5m_pct: 0.1
+  min_momentum_15m_pct: 0.3
+  max_momentum_5m_pct: 10.0
+  min_vwap_gap_pct: 0.0
+  max_vwap_gap_pct: 5.0
+  min_bid_ask_depth_ratio: 1.3
