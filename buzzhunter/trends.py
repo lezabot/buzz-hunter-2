@@ -11,6 +11,10 @@ TERMS = {
     "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum",
     "SOL-USD": "Solana crypto", "DOGE-USD": "Dogecoin",
     "PEPE-USD": "Pepe coin crypto",
+    "ADA-USD": "Cardano crypto", "XRP-USD": "XRP crypto",
+    "SHIB-USD": "Shiba Inu coin", "XLM-USD": "Stellar Lumens crypto",
+    "HBAR-USD": "Hedera crypto", "ALGO-USD": "Algorand crypto",
+    "VET-USD": "VeChain crypto", "TRX-USD": "TRON cryptocurrency",
 }
 
 class TrendsFeed:
@@ -57,7 +61,8 @@ class TrendsFeed:
             log.warning("Google Trends client unavailable; paper entries without valid cache blocked: %s", exc)
             return valid
 
-        for i, symbol in enumerate(symbols):
+        requested_with_terms = [s for s in symbols if self.config.get("terms", {}).get(s, TERMS.get(s))]
+        for i, symbol in enumerate(requested_with_terms):
             term = self.config.get("terms", {}).get(symbol, TERMS.get(symbol))
             if not term:
                 continue
@@ -96,5 +101,5 @@ class TrendsFeed:
                     self.warned = True
                 break
         valid = self._valid_cache(time.time(), symbols)
-        log.info("Google Trends confirmation available for %d/%d requested symbols", len(valid), len(symbols))
+        log.info("Google Trends confirmation available for %d/%d requested symbols", len(valid), len(requested_with_terms))
         return valid
