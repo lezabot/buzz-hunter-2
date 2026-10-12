@@ -11,6 +11,7 @@ from .market import CoinbaseFeed, CoinbaseRateLimitError
 from .portfolio import PaperPortfolio
 from .trends import TrendsFeed
 from .strategy3 import confirm
+from .discord_alerts import send_alert
 log = logging.getLogger('buzzhunter')
 def write_status(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,127 @@ def scan(cfg,feed,trends,portfolio,status_path):
     new_sales=[t for t in portfolio.state['trades'][previous_trade_count:] if t.get('side')=='SELL']
     for sale in new_sales:
         log.info('PAPER SALE symbol=%s quantity=%.10f price=%.8f pnl=%.2f reason=%s',sale['symbol'],sale['qty'],sale['price'],sale['pnl'],sale['reason'])
+    for sale in new_sales:
+        send_alert('Buzz Hunter PAPER SALE | '+str(sale.get('symbol'))+' | Quantity '+str(sale.get('qty'))+' | Price [s for s in cfg.get('watchlist',[]) if s in markets])
+    candidates=[]
+    for symbol,m in markets.items():
+        if symbol in portfolio.state['positions']: continue
+        sig=evaluate(m,trend_scores.get(symbol))
+        candidates.append((sig.score,symbol,sig,m))
+    candidates.sort(reverse=True,key=lambda x:x[0])
+    purchased=[]
+    checks=0
+    if not missing_held and not throttled and not portfolio.halted(prices):
+        for score,symbol,sig,m in candidates:
+            if not entry_allowed(sig,m,cfg): continue
+            if cfg.get('advanced_signals',{}).get('enabled',False):
+                if checks>=int(cfg['advanced_signals'].get('max_confirmation_checks_per_scan',5)): break
+                checks+=1
+                try: ok,reason=confirm(feed,symbol,cfg)
+                except Exception as exc:
+                    log.warning('Advanced confirmation unavailable %s: %s',symbol,exc)
+                    continue
+                if not ok:
+                    log.info('Advanced confirmation rejected %s: %s',symbol,reason)
+                    continue
+            if portfolio.buy(symbol,m['price'],prices,now):
+                purchased.append(symbol)
+                log.info('PAPER BUY %s price=%.8f score=%.1f',symbol,m['price'],score)
+    top=[{'symbol':s,'score':round(score,1),'eligible':entry_allowed(sig,m,cfg),'trend_available':sig.trend_score is not None} for score,s,sig,m in candidates[:10]]
+    status={'timestamp_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(now)),
+            'mode':'paper','markets_checked':len(markets),'markets_requested':len(symbols),
+            'cash_usd':round(portfolio.state['cash'],2),'equity_usd':round(portfolio.equity(prices),2),
+            'positions':list(portfolio.state['positions']),'paper_buys':purchased,
+            'recent_sales':[t for t in portfolio.state['trades'] if t.get('side')=='SELL'][-10:],
+            'halted_for_day':portfolio.halted(prices),'missing_held_prices':sorted(missing_held),
+            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top}
+    write_status(status_path,status)
+    log.info('MARKET SCAN COMPLETE checked=%d equity=$%.2f cash=$%.2f positions=%d paper_buys=%d',len(markets),status['equity_usd'],status['cash_usd'],len(status['positions']),len(purchased))
+    return status
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--config',default='config.yaml')
+    parser.add_argument('--once',action='store_true')
+    args=parser.parse_args()
+    logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s: %(message)s',force=True)
+    log.info('BUZZ HUNTER 3.0 STARTING - PAPER MODE ONLY')
+    cfg=yaml.safe_load(Path(args.config).read_text())
+    validate(cfg)
+    data_dir=Path(os.getenv('BUZZ_DATA_DIR','/data' if Path('/data').is_dir() else 'data'))
+    if not os.path.ismount(data_dir):
+        log.warning('Persistent storage mount not detected at %s',data_dir)
+    else:
+        log.info('Persistent storage verified at %s',data_dir)
+    portfolio=PaperPortfolio(data_dir/'paper_state.json',cfg)
+    feed,trends=CoinbaseFeed(),TrendsFeed(cfg)
+    send_alert('Buzz Hunter 3.0 started in PAPER MODE ONLY. Discord notifications connected.')
+    while True:
+        try: scan(cfg,feed,trends,portfolio,data_dir/'status.json')
+        except Exception as exc:
+            log.exception('SCAN FAILED; retrying')
+            send_alert('Buzz Hunter scan failed: '+str(exc)[:350])
+        if args.once: break
+        time.sleep(max(30,int(cfg['poll_seconds'])))
+if __name__=='__main__': main()
++str(sale.get('price'))+' | Realized P/L [s for s in cfg.get('watchlist',[]) if s in markets])
+    candidates=[]
+    for symbol,m in markets.items():
+        if symbol in portfolio.state['positions']: continue
+        sig=evaluate(m,trend_scores.get(symbol))
+        candidates.append((sig.score,symbol,sig,m))
+    candidates.sort(reverse=True,key=lambda x:x[0])
+    purchased=[]
+    checks=0
+    if not missing_held and not throttled and not portfolio.halted(prices):
+        for score,symbol,sig,m in candidates:
+            if not entry_allowed(sig,m,cfg): continue
+            if cfg.get('advanced_signals',{}).get('enabled',False):
+                if checks>=int(cfg['advanced_signals'].get('max_confirmation_checks_per_scan',5)): break
+                checks+=1
+                try: ok,reason=confirm(feed,symbol,cfg)
+                except Exception as exc:
+                    log.warning('Advanced confirmation unavailable %s: %s',symbol,exc)
+                    continue
+                if not ok:
+                    log.info('Advanced confirmation rejected %s: %s',symbol,reason)
+                    continue
+            if portfolio.buy(symbol,m['price'],prices,now):
+                purchased.append(symbol)
+                log.info('PAPER BUY %s price=%.8f score=%.1f',symbol,m['price'],score)
+    top=[{'symbol':s,'score':round(score,1),'eligible':entry_allowed(sig,m,cfg),'trend_available':sig.trend_score is not None} for score,s,sig,m in candidates[:10]]
+    status={'timestamp_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(now)),
+            'mode':'paper','markets_checked':len(markets),'markets_requested':len(symbols),
+            'cash_usd':round(portfolio.state['cash'],2),'equity_usd':round(portfolio.equity(prices),2),
+            'positions':list(portfolio.state['positions']),'paper_buys':purchased,
+            'recent_sales':[t for t in portfolio.state['trades'] if t.get('side')=='SELL'][-10:],
+            'halted_for_day':portfolio.halted(prices),'missing_held_prices':sorted(missing_held),
+            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top}
+    write_status(status_path,status)
+    log.info('MARKET SCAN COMPLETE checked=%d equity=$%.2f cash=$%.2f positions=%d paper_buys=%d',len(markets),status['equity_usd'],status['cash_usd'],len(status['positions']),len(purchased))
+    return status
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--config',default='config.yaml')
+    parser.add_argument('--once',action='store_true')
+    args=parser.parse_args()
+    logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s: %(message)s',force=True)
+    log.info('BUZZ HUNTER 3.0 STARTING - PAPER MODE ONLY')
+    cfg=yaml.safe_load(Path(args.config).read_text())
+    validate(cfg)
+    data_dir=Path(os.getenv('BUZZ_DATA_DIR','/data' if Path('/data').is_dir() else 'data'))
+    if not os.path.ismount(data_dir):
+        log.warning('Persistent storage mount not detected at %s',data_dir)
+    else:
+        log.info('Persistent storage verified at %s',data_dir)
+    portfolio=PaperPortfolio(data_dir/'paper_state.json',cfg)
+    feed,trends=CoinbaseFeed(),TrendsFeed(cfg)
+    while True:
+        try: scan(cfg,feed,trends,portfolio,data_dir/'status.json')
+        except Exception: log.exception('SCAN FAILED; retrying')
+        if args.once: break
+        time.sleep(max(30,int(cfg['poll_seconds'])))
+if __name__=='__main__': main()
++str(sale.get('pnl'))+' | Reason '+str(sale.get('reason')))
     trend_scores=trends.scores([s for s in cfg.get('watchlist',[]) if s in markets])
     candidates=[]
     for symbol,m in markets.items():
