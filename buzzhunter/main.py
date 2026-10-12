@@ -9,7 +9,7 @@ import yaml
 from .core import entry_allowed, evaluate
 from .market import CoinbaseFeed, CoinbaseRateLimitError
 from .portfolio import PaperPortfolio
-from .trends import TrendsFeed
+from .trends import TrendsFeed, TERMS
 from .strategy3 import confirm
 log = logging.getLogger('buzzhunter')
 def write_status(path, data):
@@ -44,7 +44,29 @@ def scan(cfg,feed,trends,portfolio,status_path):
     if missing_held: log.error('Missing held prices %s; no new buys',sorted(missing_held))
     portfolio.day_check(prices,now)
     portfolio.exits(prices,now)
-    trend_scores=trends.scores([s for s in cfg.get('watchlist',[]) if s in markets])
+    # Request Trends only for a bounded shortlist of markets that meet hard entry gates.
+    # This avoids spending Google requests on coins that cannot be purchased.
+    risk = cfg['risk']
+    preliminary = []
+    for symbol, market in markets.items():
+        if symbol in portfolio.state['positions']:
+            continue
+        price = market['price']
+        if not (0 < price < 1 and price * (1 + risk['assumed_slippage_pct_per_side']) < 1):
+            continue
+        if not (0 <= market['change_24h_pct'] <= risk['max_entry_price_change_24h_pct']):
+            continue
+        if market['volume_usd_24h'] < risk['min_24h_quote_volume_usd'] or market['spread_pct'] > risk['max_spread_pct']:
+            continue
+        preliminary.append((evaluate(market).market_score, symbol))
+    preliminary.sort(reverse=True)
+    trend_limit = max(1, min(10, int(cfg.get('trends', {}).get('max_symbols_per_refresh', 8))))
+    supported = cfg.get('trends', {}).get('terms', {})
+    shortlist = [symbol for _, symbol in preliminary
+                 if supported.get(symbol) or TERMS.get(symbol)][:trend_limit]
+    trend_scores = trends.scores(shortlist)
+    log.info('ENTRY PRECHECK candidates=%d trends_requested=%d trends_confirmed=%d',
+             len(preliminary), len(shortlist), len(trend_scores))
     candidates=[]
     for symbol,m in markets.items():
         if symbol in portfolio.state['positions']: continue
@@ -75,7 +97,10 @@ def scan(cfg,feed,trends,portfolio,status_path):
             'cash_usd':round(portfolio.state['cash'],2),'equity_usd':round(portfolio.equity(prices),2),
             'positions':list(portfolio.state['positions']),'paper_buys':purchased,
             'halted_for_day':portfolio.halted(prices),'missing_held_prices':sorted(missing_held),
-            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top}
+            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top,
+            'trends_confirmed_symbols':sorted(trend_scores),
+            'trends_coverage_count':len(trend_scores),
+            'entry_eligible_count':sum(entry_allowed(sig,m,cfg) for _,_,sig,m in candidates)}
     write_status(status_path,status)
     log.info('MARKET SCAN COMPLETE checked=%d equity=$%.2f cash=$%.2f positions=%d paper_buys=%d',len(markets),status['equity_usd'],status['cash_usd'],len(status['positions']),len(purchased))
     return status
@@ -89,7 +114,12 @@ def main():
     cfg=yaml.safe_load(Path(args.config).read_text())
     validate(cfg)
     data_dir=Path(os.getenv('BUZZ_DATA_DIR','/data' if Path('/data').is_dir() else 'data'))
-    if str(data_dir)!='/data': log.warning('No /data volume; redeploy may reset paper account')
+    if not data_dir.is_dir():
+        log.warning('Paper data directory %s does not exist yet; checking persistent storage configuration', data_dir)
+    log.info('Paper data directory: %s (RAILWAY_VOLUME_MOUNT_PATH=%s)', data_dir, os.getenv('RAILWAY_VOLUME_MOUNT_PATH', 'unset'))
+    mounted = os.getenv('RAILWAY_VOLUME_MOUNT_PATH')
+    if os.getenv('RAILWAY_PROJECT_ID') and (not mounted or Path(mounted).resolve() != data_dir.resolve()):
+        log.warning('Paper data directory does not match Railway volume mount; persistence may be at risk')
     portfolio=PaperPortfolio(data_dir/'paper_state.json',cfg)
     feed,trends=CoinbaseFeed(),TrendsFeed(cfg)
     while True:
