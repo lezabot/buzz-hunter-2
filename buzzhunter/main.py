@@ -43,7 +43,11 @@ def scan(cfg,feed,trends,portfolio,status_path):
     missing_held=set(portfolio.state['positions'])-set(prices)
     if missing_held: log.error('Missing held prices %s; no new buys',sorted(missing_held))
     portfolio.day_check(prices,now)
+    previous_trade_count=len(portfolio.state['trades'])
     portfolio.exits(prices,now)
+    new_sales=[t for t in portfolio.state['trades'][previous_trade_count:] if t.get('side')=='SELL']
+    for sale in new_sales:
+        log.info('PAPER SALE symbol=%s quantity=%.10f price=%.8f pnl=%.2f reason=%s',sale['symbol'],sale['qty'],sale['price'],sale['pnl'],sale['reason'])
     trend_scores=trends.scores([s for s in cfg.get('watchlist',[]) if s in markets])
     candidates=[]
     for symbol,m in markets.items():
@@ -74,6 +78,7 @@ def scan(cfg,feed,trends,portfolio,status_path):
             'mode':'paper','markets_checked':len(markets),'markets_requested':len(symbols),
             'cash_usd':round(portfolio.state['cash'],2),'equity_usd':round(portfolio.equity(prices),2),
             'positions':list(portfolio.state['positions']),'paper_buys':purchased,
+            'recent_sales':[t for t in portfolio.state['trades'] if t.get('side')=='SELL'][-10:],
             'halted_for_day':portfolio.halted(prices),'missing_held_prices':sorted(missing_held),
             'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top}
     write_status(status_path,status)
@@ -89,7 +94,10 @@ def main():
     cfg=yaml.safe_load(Path(args.config).read_text())
     validate(cfg)
     data_dir=Path(os.getenv('BUZZ_DATA_DIR','/data' if Path('/data').is_dir() else 'data'))
-    if str(data_dir)!='/data': log.warning('No /data volume; redeploy may reset paper account')
+    if not os.path.ismount(data_dir):
+        log.warning('Persistent storage mount not detected at %s',data_dir)
+    else:
+        log.info('Persistent storage verified at %s',data_dir)
     portfolio=PaperPortfolio(data_dir/'paper_state.json',cfg)
     feed,trends=CoinbaseFeed(),TrendsFeed(cfg)
     while True:
