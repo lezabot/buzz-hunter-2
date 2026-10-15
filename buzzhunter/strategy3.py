@@ -34,3 +34,24 @@ def confirm(feed, symbol, cfg):
               (ratio >= float(s.get('min_bid_ask_depth_ratio',1.3)), 'order book')]
     failed = [name for ok,name in checks if not ok]
     return not failed, ', '.join(failed) if failed else 'confirmed'
+
+
+def volume_spike_15m(feed, symbol):
+    """Completed 5m candles: last 15m volume vs immediately preceding 15m.
+
+    A 200% increase means current volume >= 3x previous volume.
+    Missing or zero baseline never earns a bonus.
+    """
+    candles = feed.get('/products/' + symbol + '/candles', {'granularity': 300})
+    if not isinstance(candles, list) or len(candles) < 7:
+        return None
+    rows = sorted(candles, key=lambda r: r[0])[-7:-1]
+    if len(rows) != 6 or any(len(r) < 6 for r in rows):
+        return None
+    volumes = [float(r[5]) for r in rows]
+    if any(not __import__('math').isfinite(v) or v < 0 for v in volumes):
+        return None
+    baseline, recent = sum(volumes[:3]), sum(volumes[3:])
+    if baseline <= 0:
+        return None
+    return 100 * (recent / baseline - 1)
