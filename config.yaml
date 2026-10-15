@@ -26,19 +26,11 @@ signals:
   volume_spike_checks_per_scan: 12
   volume_spike_threshold_pct: 200
   volume_spike_bonus_points: 15
-  google_trends_weight: 45
-  momentum_weight: 25
-  volume_weight: 20
-  volatility_weight: 10
+  momentum_weight: 45
+  volume_weight: 35
+  volatility_weight: 20
 trends:
-  enabled: true
-  refresh_seconds: 1800
-  terms:
-    BTC-USD: Bitcoin
-    ETH-USD: Ethereum
-    SOL-USD: Solana crypto
-    DOGE-USD: Dogecoin
-    PEPE-USD: Pepe coin crypto
+  enabled: false
 advanced_signals:
   enabled: true
   max_confirmation_checks_per_scan: 5
