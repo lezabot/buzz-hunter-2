@@ -10,7 +10,7 @@ from .core import entry_allowed, evaluate
 from .market import CoinbaseFeed, CoinbaseRateLimitError
 from .portfolio import PaperPortfolio
 from .trends import TrendsFeed
-from .strategy3 import confirm
+from .strategy3 import confirm, volume_spike_15m
 from .discord_alerts import send_alert
 log = logging.getLogger('buzzhunter')
 def write_status(path, data):
@@ -58,6 +58,24 @@ def scan(cfg,feed,trends,portfolio,status_path):
         sig=evaluate(m,trend_scores.get(symbol))
         candidates.append((sig.score,symbol,sig,m))
     candidates.sort(reverse=True,key=lambda x:x[0])
+    # Evaluate volume acceleration on the strongest candidates only to avoid
+    # exhausting Coinbase rate limits across the 100-symbol universe.
+    spike_data = {}
+    for _, symbol, _, m in candidates[:int(cfg['signals'].get('volume_spike_checks_per_scan', 12))]:
+        try:
+            growth = volume_spike_15m(feed, symbol)
+            if growth is not None:
+                spike_data[symbol] = round(growth, 1)
+        except Exception as exc:
+            log.info('15m volume unavailable %s: %s', symbol, exc)
+    bonus = float(cfg['signals'].get('volume_spike_bonus_points', 15))
+    threshold = float(cfg['signals'].get('volume_spike_threshold_pct', 200))
+    candidates = [(min(100, score + (bonus if spike_data.get(symbol, -1) >= threshold else 0)), symbol, sig, m)
+                  for score, symbol, sig, m in candidates]
+    # Keep the entry gate aligned with the adjusted score.
+    for score, symbol, sig, m in candidates:
+        sig.score = score
+    candidates.sort(reverse=True, key=lambda x: x[0])
     purchased=[]
     checks=0
     if not missing_held and not throttled and not portfolio.halted(prices):
@@ -76,14 +94,14 @@ def scan(cfg,feed,trends,portfolio,status_path):
             if portfolio.buy(symbol,m['price'],prices,now):
                 purchased.append(symbol)
                 log.info('PAPER BUY %s price=%.8f score=%.1f',symbol,m['price'],score)
-    top=[{'symbol':s,'score':round(score,1),'eligible':entry_allowed(sig,m,cfg),'trend_available':sig.trend_score is not None} for score,s,sig,m in candidates[:10]]
+    top=[{'symbol':s,'score':round(score,1),'eligible':entry_allowed(sig,m,cfg),'trend_available':sig.trend_score is not None,'volume_growth_15m_pct':spike_data.get(s)} for score,s,sig,m in candidates[:10]]
     status={'timestamp_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(now)),
             'mode':'paper','markets_checked':len(markets),'markets_requested':len(symbols),
             'cash_usd':round(portfolio.state['cash'],2),'equity_usd':round(portfolio.equity(prices),2),
             'positions':list(portfolio.state['positions']),'paper_buys':purchased,
             'recent_sales':[t for t in portfolio.state['trades'] if t.get('side')=='SELL'][-10:],
             'halted_for_day':portfolio.halted(prices),'missing_held_prices':sorted(missing_held),
-            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top}
+            'coinbase_throttled':throttled,'advanced_checks':checks,'top_signals':top,'volume_spikes_15m_pct':spike_data}
     write_status(status_path,status)
     log.info('MARKET SCAN COMPLETE checked=%d equity=$%.2f cash=$%.2f positions=%d paper_buys=%d',len(markets),status['equity_usd'],status['cash_usd'],len(status['positions']),len(purchased))
     return status
