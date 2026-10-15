@@ -1,4 +1,4 @@
-"""Paper-only entry scoring: valid Google Trends required for all new buys."""
+"""Paper-only scoring with conservative market-only Trends fallback."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from math import isfinite, log1p
@@ -28,7 +28,7 @@ def evaluate(market, trend_score=None):
     liquidity = _clamp(market['liquidity_score'])
     market_score = (25 * momentum + 20 * activity + 10 * liquidity) / 55
     if trend_score is None or not isfinite(float(trend_score)):
-        return Signal(0.0, market_score, None)
+        return Signal(market_score, market_score, None)
     trend = _clamp(trend_score)
     score = .45 * trend + .25 * momentum + .20 * activity + .10 * liquidity
     return Signal(score, market_score, trend)
@@ -39,10 +39,9 @@ def entry_allowed(signal, market, config):
     price = float(market['price'])
     slip = float(r['assumed_slippage_pct_per_side'])
     return (config.get('mode') == 'paper'
-            and config.get('trends', {}).get('enabled', True)
-            and signal.trend_score is not None
+            and (signal.trend_score is not None or config.get('signals', {}).get('allow_market_only_fallback', False))
             and isfinite(signal.score)
-            and signal.score >= s['minimum_score']
+            and signal.score >= (s.get('fallback_minimum_score', 78) if signal.trend_score is None else s['minimum_score'])
             and 0 < price < 1
             and price * (1 + slip) < 1
             and 0 <= market['change_24h_pct'] <= r['max_entry_price_change_24h_pct']
