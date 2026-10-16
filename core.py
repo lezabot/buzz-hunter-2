@@ -31,9 +31,8 @@ def evaluate(market, trend_score=None):
     # Proxy based on absolute 24-hour change; not intraday realized volatility.
     volatility_proxy = _clamp(abs(change) * 5)
     market_component = .45 * momentum + .35 * activity + .20 * volatility_proxy
-    trend = None if trend_score is None else _clamp(trend_score)
     score = market_component
-    return Signal(_clamp(score), _clamp(market_component), trend)
+    return Signal(_clamp(score), _clamp(market_component), None)
 
 
 def entry_allowed(signal, market, config):
