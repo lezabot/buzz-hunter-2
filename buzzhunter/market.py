@@ -51,3 +51,17 @@ class CoinbaseFeed:
         return {'price':price,'change_24h_pct':(price/opening-1)*100 if opening>0 else 0,
                 'volume_usd_24h':volume,'spread_pct':(ask-bid)/((ask+bid)/2),
                 'liquidity_score':min(100,max(0,100-1000*(ask-bid)/price))}
+
+    def volume_spike_15m(self, symbol):
+        # Compare two complete adjacent 15-minute windows of one-minute volume.
+        now = int(time.time() // 60) * 60
+        fmt = lambda t: time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))
+        rows = self.get('/products/' + symbol + '/candles',
+                        params={'granularity': 60, 'start': fmt(now - 31*60), 'end': fmt(now)})
+        by_minute = {int(row[0]): float(row[5]) for row in rows if len(row) >= 6}
+        recent = [by_minute.get(now - 60*i) for i in range(1, 16)]
+        previous = [by_minute.get(now - 60*i) for i in range(16, 31)]
+        if any(v is None for v in recent + previous):
+            return None
+        baseline = sum(previous)
+        return (sum(recent) / baseline - 1) * 100 if baseline > 0 else None
