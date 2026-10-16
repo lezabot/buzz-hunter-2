@@ -35,7 +35,7 @@ def validate(cfg):
         raise ValueError('Risk limits must be positive')
 
 
-def scan(cfg, feed, trends, portfolio, status_path):
+def scan(cfg, feed, portfolio, status_path):
     now = time.time()
     log.info('SCAN STEP: requesting product universe')
     symbols = feed.products(int(cfg['universe_limit']), cfg.get('watchlist', []))
@@ -97,14 +97,14 @@ def main():
         validate(cfg)
         log.info('STARTUP STEP 3: selecting data directory')
         data_dir = Path(os.getenv('BUZZ_DATA_DIR', '/data' if Path('/data').is_dir() else 'data'))
-        log.info('Data directory: %s; poll every %ss; Google Trends enabled=%s',
-                 data_dir.resolve(), cfg['poll_seconds'], cfg.get('trends', {}).get('enabled', True))
+        log.info('Data directory: %s; poll every %ss; market-only paper signals',
+                 data_dir.resolve(), cfg['poll_seconds'])
         if str(data_dir) != '/data':
             log.warning('No /data volume detected; Railway redeployments may reset simulated account. Attach volume at /data.')
         log.info('STARTUP STEP 4: initializing paper portfolio')
         portfolio = PaperPortfolio(data_dir / 'paper_state.json', cfg)
         log.info('STARTUP STEP 5: initializing Coinbase market feed')
-        feed, trends = CoinbaseFeed(), None
+        feed = CoinbaseFeed()
         status_path = data_dir / 'status.json'
         log.info('STARTUP COMPLETE; beginning paper-only scan loop')
     except Exception:
@@ -113,7 +113,7 @@ def main():
     failures = 0
     while True:
         try:
-            scan(cfg, feed, trends, portfolio, status_path)
+            scan(cfg, feed, portfolio, status_path)
             failures = 0
         except Exception:
             failures += 1
