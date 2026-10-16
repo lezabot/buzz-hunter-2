@@ -24,9 +24,9 @@ signals:
   volume_spike_checks_per_scan: 12
   volume_spike_threshold_pct: 200
   volume_spike_bonus_points: 15
-  momentum_weight: 45
-  volume_weight: 35
-  volatility_weight: 20
+  momentum_weight: 40
+  volume_weight: 30
+  volatility_weight: 30
 advanced_signals:
   enabled: true
   max_confirmation_checks_per_scan: 5
