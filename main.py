@@ -11,7 +11,6 @@ import yaml
 from .core import entry_allowed, evaluate
 from .market import CoinbaseFeed
 from .portfolio import PaperPortfolio
-from .trends import TrendsFeed
 
 log = logging.getLogger('buzzhunter')
 
@@ -36,7 +35,7 @@ def validate(cfg):
         raise ValueError('Risk limits must be positive')
 
 
-def scan(cfg, feed, trends, portfolio, status_path):
+def scan(cfg, feed, portfolio, status_path):
     now = time.time()
     log.info('SCAN STEP: requesting product universe')
     symbols = feed.products(int(cfg['universe_limit']), cfg.get('watchlist', []))
@@ -54,14 +53,11 @@ def scan(cfg, feed, trends, portfolio, status_path):
         log.error('Missing prices for held positions %s; no new trades this scan', sorted(missing_held))
     portfolio.day_check(prices, now)
     portfolio.exits(prices, now)
-    log.info('SCAN STEP: requesting Google Trends scores')
-    trend_scores = trends.scores([s for s in cfg.get('watchlist', []) if s in markets])
-    log.info('SCAN STEP: Trends scores available=%d', len(trend_scores))
     candidates = []
     for symbol, m in markets.items():
         if symbol in portfolio.state['positions']:
             continue
-        signal = evaluate(m, trend_scores.get(symbol))
+        signal = evaluate(m)
         candidates.append((signal.score, symbol, signal, m))
     candidates.sort(reverse=True, key=lambda row: row[0])
     purchased = []
@@ -73,7 +69,7 @@ def scan(cfg, feed, trends, portfolio, status_path):
                 purchased.append(symbol)
                 log.info('PAPER BUY %s price=%.8f score=%.1f', symbol, m['price'], score)
     top = [{'symbol': s, 'score': round(score, 1), 'eligible': entry_allowed(sig, m, cfg),
-            'trend_available': sig.trend_score is not None} for score, s, sig, m in candidates[:10]]
+            'market_only': True} for score, s, sig, m in candidates[:10]]
     status = {'timestamp_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)),
               'mode': 'paper', 'markets_checked': len(markets), 'markets_requested': len(symbols),
               'cash_usd': round(portfolio.state['cash'], 2), 'equity_usd': round(portfolio.equity(prices), 2),
@@ -101,14 +97,14 @@ def main():
         validate(cfg)
         log.info('STARTUP STEP 3: selecting data directory')
         data_dir = Path(os.getenv('BUZZ_DATA_DIR', '/data' if Path('/data').is_dir() else 'data'))
-        log.info('Data directory: %s; poll every %ss; Google Trends enabled=%s',
-                 data_dir.resolve(), cfg['poll_seconds'], cfg.get('trends', {}).get('enabled', True))
+        log.info('Data directory: %s; poll every %ss; market-only paper signals',
+                 data_dir.resolve(), cfg['poll_seconds'])
         if str(data_dir) != '/data':
             log.warning('No /data volume detected; Railway redeployments may reset simulated account. Attach volume at /data.')
         log.info('STARTUP STEP 4: initializing paper portfolio')
         portfolio = PaperPortfolio(data_dir / 'paper_state.json', cfg)
-        log.info('STARTUP STEP 5: initializing Coinbase and Google Trends feeds')
-        feed, trends = CoinbaseFeed(), TrendsFeed(cfg)
+        log.info('STARTUP STEP 5: initializing Coinbase market feed')
+        feed = CoinbaseFeed()
         status_path = data_dir / 'status.json'
         log.info('STARTUP COMPLETE; beginning paper-only scan loop')
     except Exception:
@@ -117,7 +113,7 @@ def main():
     failures = 0
     while True:
         try:
-            scan(cfg, feed, trends, portfolio, status_path)
+            scan(cfg, feed, portfolio, status_path)
             failures = 0
         except Exception:
             failures += 1

@@ -21,16 +21,12 @@ signals:
   minimum_score: 68
   cooldown_hours: 6
   min_history_points: 12
-  allow_market_only_fallback: true
-  fallback_minimum_score: 78
   volume_spike_checks_per_scan: 12
   volume_spike_threshold_pct: 200
   volume_spike_bonus_points: 15
   momentum_weight: 45
   volume_weight: 35
   volatility_weight: 20
-trends:
-  enabled: false
 advanced_signals:
   enabled: true
   max_confirmation_checks_per_scan: 5
