@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 import yaml
-from .core import entry_allowed, evaluate
+from .core import entry_allowed, evaluate, entry_rejection_reasons
 from .market import CoinbaseFeed
 from .portfolio import PaperPortfolio
 
@@ -54,9 +54,23 @@ def scan(cfg, feed, trends, portfolio, status_path):
     for symbol, m in markets.items():
         if symbol in portfolio.state['positions']:
             continue
-        signal = evaluate(m)
+        signal = evaluate(m, config=cfg)
         candidates.append((signal.score, symbol, signal, m))
     candidates.sort(reverse=True, key=lambda row: row[0])
+    checks = max(0, min(20, int(cfg['signals'].get('volume_spike_checks_per_scan', 12))))
+    for _, symbol, _, m in [row for row in candidates if 0 < row[3]['price'] < 1][:checks]:
+        try:
+            m['volume_spike_pct'] = feed.volume_spike_15m(symbol)
+        except Exception as exc:
+            log.warning('Volume history unavailable %s: %s', symbol, exc)
+    candidates = [(evaluate(m, config=cfg).score, symbol, evaluate(m, config=cfg), m)
+                  for _, symbol, _, m in candidates]
+    candidates.sort(reverse=True, key=lambda row: row[0])
+    for score, symbol, signal, m in candidates[:10]:
+        reasons = entry_rejection_reasons(signal, m, cfg)
+        log.info('CANDIDATE %s score=%.1f price=%.8f volume24h=%.0f spread=%.4f change24h=%.2f spike15m=%s eligible=%s reasons=%s',
+                 symbol, score, m['price'], m['volume_usd_24h'], m['spread_pct'],
+                 m['change_24h_pct'], m.get('volume_spike_pct'), not reasons, reasons)
     purchased = []
     if not missing_held and not portfolio.halted(prices):
         for score, symbol, signal, m in candidates:
@@ -66,7 +80,7 @@ def scan(cfg, feed, trends, portfolio, status_path):
                 purchased.append(symbol)
                 log.info('PAPER BUY %s price=%.8f score=%.1f', symbol, m['price'], score)
     top = [{'symbol': s, 'score': round(score, 1), 'eligible': entry_allowed(sig, m, cfg),
-            'market_only': True} for score, s, sig, m in candidates[:10]]
+            'market_only': True, 'rejection_reasons': entry_rejection_reasons(sig, m, cfg), 'volume_spike_15m_pct': m.get('volume_spike_pct')} for score, s, sig, m in candidates[:10]]
     status = {'timestamp_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)),
               'mode': 'paper', 'markets_checked': len(markets), 'markets_requested': len(symbols),
               'cash_usd': round(portfolio.state['cash'], 2), 'equity_usd': round(portfolio.equity(prices), 2),
