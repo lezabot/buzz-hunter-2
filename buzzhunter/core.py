@@ -46,6 +46,9 @@ def entry_allowed(signal, market, config):
 def entry_rejection_reasons(signal, market, config):
     s, r = config['signals'], config['risk']
     reasons = []
+    # Fail closed: no paper entry without a validated Google Trends score.
+    if signal.trend_score is None or not (0 <= signal.trend_score <= 100):
+        reasons.append('missing_valid_google_trends')
     price = float(market['price'])
     if signal.score < float(s['minimum_score']): reasons.append('score_below_minimum')
     if not (0 < price and price * (1 + float(r['assumed_slippage_pct_per_side'])) < 1):
