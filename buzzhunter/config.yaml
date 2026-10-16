@@ -29,8 +29,6 @@ signals:
   momentum_weight: 45
   volume_weight: 35
   volatility_weight: 20
-trends:
-  enabled: false
 advanced_signals:
   enabled: true
   max_confirmation_checks_per_scan: 5
