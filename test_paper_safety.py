@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from .core import evaluate, entry_allowed
 from .portfolio import PaperPortfolio
+from .buzzhunter.portfolio import PaperPortfolio as DeployedPaperPortfolio
 from .main import validate
 
 CFG = {
@@ -32,6 +33,17 @@ class PaperSafetyTests(unittest.TestCase):
             p = PaperPortfolio(Path(d)/"state.json", CFG)
             self.assertFalse(p.buy("TEST-USD", .999, {"TEST-USD": .999}, 1))
             self.assertEqual(p.state["cash"], 1000)
+            self.assertEqual(p.state["positions"], {})
+
+    def test_deployed_broker_rejects_subdollar_quote_with_above_dollar_fill(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = DeployedPaperPortfolio(Path(d)/"state.json", CFG)
+            self.assertFalse(p.buy("NEAR-USD", .999, {"NEAR-USD": .999}, 1))
+            self.assertEqual(p.state["cash"], 1000)
+            self.assertEqual(p.state["positions"], {})
+            self.assertEqual(p.state["trades"], [])
+            self.assertTrue(p.buy("SAFE-USD", .5, {"SAFE-USD": .5}, 2))
+            self.assertTrue(p.sell("SAFE-USD", 1.2, 3, "test_exit_above_dollar"))
             self.assertEqual(p.state["positions"], {})
 
     def test_limits_and_mode(self):
