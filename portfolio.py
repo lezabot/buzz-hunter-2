@@ -47,6 +47,7 @@ class PaperPortfolio:
         amount = min(r['trade_usd'], self.state['cash'] / (1+r['assumed_fee_pct_per_side']), r['max_exposure_usd']-exposure)
         if amount < 10: return False
         execution = price * (1+r['assumed_slippage_pct_per_side'])
+        if not (0 < execution < 1.0): return False
         fee = amount * r['assumed_fee_pct_per_side']
         qty = amount / execution
         self.state['cash'] -= amount + fee
