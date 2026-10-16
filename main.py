@@ -53,12 +53,11 @@ def scan(cfg, feed, trends, portfolio, status_path):
         log.error('Missing prices for held positions %s; no new trades this scan', sorted(missing_held))
     portfolio.day_check(prices, now)
     portfolio.exits(prices, now)
-    trend_scores = {}  # Google Trends intentionally removed from entry scoring
     candidates = []
     for symbol, m in markets.items():
         if symbol in portfolio.state['positions']:
             continue
-        signal = evaluate(m, trend_scores.get(symbol))
+        signal = evaluate(m)
         candidates.append((signal.score, symbol, signal, m))
     candidates.sort(reverse=True, key=lambda row: row[0])
     purchased = []
@@ -70,7 +69,7 @@ def scan(cfg, feed, trends, portfolio, status_path):
                 purchased.append(symbol)
                 log.info('PAPER BUY %s price=%.8f score=%.1f', symbol, m['price'], score)
     top = [{'symbol': s, 'score': round(score, 1), 'eligible': entry_allowed(sig, m, cfg),
-            'trend_available': sig.trend_score is not None} for score, s, sig, m in candidates[:10]]
+            'market_only': True} for score, s, sig, m in candidates[:10]]
     status = {'timestamp_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)),
               'mode': 'paper', 'markets_checked': len(markets), 'markets_requested': len(symbols),
               'cash_usd': round(portfolio.state['cash'], 2), 'equity_usd': round(portfolio.equity(prices), 2),
