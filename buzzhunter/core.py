@@ -1,6 +1,6 @@
 """Buzz Hunter 3.0 paper-only market signal scoring.
 
-Google Trends is not required or used. Entries must be strictly below $1.
+Every new entry requires a valid Google Trends score weighted at 45%. Entries must be strictly below $1.
 Existing positions may be exited at any positive price.
 """
 from dataclasses import dataclass
@@ -36,7 +36,14 @@ def evaluate(market, trend_score=None, config=None):
     spike = market.get('volume_spike_pct')
     if spike is not None and spike >= float(weights.get('volume_spike_threshold_pct', 200)):
         score += float(weights.get('volume_spike_bonus_points', 15))
-    return Signal(_clamp(score), _clamp(score), None)
+    market_score = _clamp(score)
+    trends_weight = float((config or {}).get('trends', {}).get('weight_pct', 45)) / 100.0
+    if trends_weight != 0.45:
+        raise ValueError('Google Trends weight must remain 45%')
+    valid_trend = trend_score is not None and 0 <= float(trend_score) <= 100
+    trend_value = float(trend_score) if valid_trend else None
+    combined = (1 - trends_weight) * market_score + trends_weight * (trend_value if valid_trend else 0)
+    return Signal(_clamp(combined), market_score, trend_value)
 
 def entry_allowed(signal, market, config):
     s, r = config['signals'], config['risk']
