@@ -1,7 +1,6 @@
 """Buzz Hunter 3.0 paper-only market signal scoring.
 
-Google Trends is not required or used. Entries must be strictly below $1.
-Existing positions may be exited at any positive price.
+Entries must be strictly below $1. Existing positions may be exited at any positive price.
 """
 from dataclasses import dataclass
 from math import log1p
@@ -14,12 +13,11 @@ def utc_day(ts):
 class Signal:
     score: float
     market_score: float
-    trend_score: float | None = None
 
 def _clamp(value):
     return max(0.0, min(100.0, float(value)))
 
-def evaluate(market, trend_score=None, config=None):
+def evaluate(market, config=None):
     change = float(market['change_24h_pct'])
     volume = max(0.0, float(market['volume_usd_24h']))
     momentum = _clamp(40 + 2 * change)
@@ -36,7 +34,8 @@ def evaluate(market, trend_score=None, config=None):
     spike = market.get('volume_spike_pct')
     if spike is not None and spike >= float(weights.get('volume_spike_threshold_pct', 200)):
         score += float(weights.get('volume_spike_bonus_points', 15))
-    return Signal(_clamp(score), _clamp(score), None)
+    score = _clamp(score)
+    return Signal(score, score)
 
 def entry_allowed(signal, market, config):
     return not entry_rejection_reasons(signal, market, config)
