@@ -11,7 +11,6 @@ import yaml
 from .core import entry_allowed, evaluate
 from .market import CoinbaseFeed
 from .portfolio import PaperPortfolio
-from .trends import TrendsFeed
 
 log = logging.getLogger('buzzhunter')
 
@@ -54,9 +53,7 @@ def scan(cfg, feed, trends, portfolio, status_path):
         log.error('Missing prices for held positions %s; no new trades this scan', sorted(missing_held))
     portfolio.day_check(prices, now)
     portfolio.exits(prices, now)
-    log.info('SCAN STEP: requesting Google Trends scores')
-    trend_scores = trends.scores([s for s in cfg.get('watchlist', []) if s in markets])
-    log.info('SCAN STEP: Trends scores available=%d', len(trend_scores))
+    trend_scores = {}  # Google Trends intentionally removed from entry scoring
     candidates = []
     for symbol, m in markets.items():
         if symbol in portfolio.state['positions']:
@@ -107,8 +104,8 @@ def main():
             log.warning('No /data volume detected; Railway redeployments may reset simulated account. Attach volume at /data.')
         log.info('STARTUP STEP 4: initializing paper portfolio')
         portfolio = PaperPortfolio(data_dir / 'paper_state.json', cfg)
-        log.info('STARTUP STEP 5: initializing Coinbase and Google Trends feeds')
-        feed, trends = CoinbaseFeed(), TrendsFeed(cfg)
+        log.info('STARTUP STEP 5: initializing Coinbase market feed')
+        feed, trends = CoinbaseFeed(), None
         status_path = data_dir / 'status.json'
         log.info('STARTUP COMPLETE; beginning paper-only scan loop')
     except Exception:
