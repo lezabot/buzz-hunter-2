@@ -12,4 +12,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install PyYAML requests
-      - run: python -m unittest discover -v
+      - run: PYTHONPATH=.. python -m unittest discover -s .. -p test_paper_safety.py -v
