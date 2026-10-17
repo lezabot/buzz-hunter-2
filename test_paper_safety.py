@@ -46,5 +46,30 @@ class PaperSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(bad)
 
+
+from .buzzhunter.portfolio import PaperPortfolio as RuntimePaperPortfolio
+
+class RailwayRuntimeSafetyTests(unittest.TestCase):
+    def test_strict_execution_price_cap_and_unrestricted_sale(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = RuntimePaperPortfolio(Path(d)/"state.json", CFG)
+            for price in (0, -0.1, 0.999, 1):
+                self.assertFalse(p.buy("BOUNDARY-USD", price, {}, 100))
+            self.assertTrue(p.buy("ALEO-USD", .5, {}, 100))
+            self.assertLess(p.state["positions"]["ALEO-USD"]["entry_price"], 1)
+            self.assertTrue(p.sell("ALEO-USD", 1.5, 200, "take_profit"))
+
+    def test_six_hour_cooldown_persists_across_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d)/"state.json"
+            p = RuntimePaperPortfolio(path, CFG)
+            self.assertTrue(p.buy("ALEO-USD", .05, {}, 100))
+            self.assertTrue(p.sell("ALEO-USD", .05, 200, "stop_loss"))
+            p = RuntimePaperPortfolio(path, CFG)
+            self.assertFalse(p.buy("ALEO-USD", .05, {}, 200 + 21600 - 1))
+            self.assertTrue(p.buy("OTHER-USD", .05, {}, 201))
+            self.assertTrue(p.buy("ALEO-USD", .05, {}, 200 + 21600))
+
+
 if __name__ == "__main__":
     unittest.main()
