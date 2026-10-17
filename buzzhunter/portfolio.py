@@ -9,6 +9,8 @@ class PaperPortfolio:
     def __init__(self, path, config):
         self.path = Path(path)
         self.risk = config['risk']
+        # Preserve a minimum six-hour cooldown even if a configuration omits it.
+        self.cooldown_seconds = 3600 * max(6.0, float(config.get('signals', {}).get('cooldown_hours', 6)))
         self.state = json.loads(self.path.read_text()) if self.path.exists() else {
             'cash': float(config['starting_cash']), 'positions': {}, 'trades': [],
             'day': utc_day(time.time()), 'day_start_equity': float(config['starting_cash']),
@@ -41,12 +43,21 @@ class PaperPortfolio:
 
     def buy(self, symbol, price, prices, now):
         r = self.risk
+        # Independent fail-closed execution-price guard; sells are unrestricted.
+        execution = float(price) * (1 + float(r['assumed_slippage_pct_per_side']))
+        if not (0 < float(price) < 1 and 0 < execution < 1):
+            return False
+        # Sales are persisted atomically in trades, so cooldown survives restarts.
+        for trade in reversed(self.state['trades']):
+            if trade.get('symbol') == symbol and trade.get('side') == 'SELL':
+                if float(now) < float(trade.get('ts', now)) + self.cooldown_seconds:
+                    return False
+                break
         if symbol in self.state['positions'] or len(self.state['positions']) >= r['max_positions'] or self.halted(prices):
             return False
         exposure = sum(p['quantity'] * prices.get(s,p['entry_price']) for s,p in self.state['positions'].items())
         amount = min(r['trade_usd'], self.state['cash'] / (1+r['assumed_fee_pct_per_side']), r['max_exposure_usd']-exposure)
         if amount < 10: return False
-        execution = price * (1+r['assumed_slippage_pct_per_side'])
         fee = amount * r['assumed_fee_pct_per_side']
         qty = amount / execution
         self.state['cash'] -= amount + fee
