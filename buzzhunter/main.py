@@ -99,7 +99,7 @@ def main():
     parser.add_argument('--once', action='store_true', help='Run one scan then exit, for diagnostics only')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s', force=True, stream=sys.stdout)
-    log.info('BUZZ HUNTER 3.0 STARTING - PAPER MODE ONLY (MARKET-ONLY SIGNALS)')
+    log.info('BUZZ HUNTER 3.1 STARTING - PAPER MODE ONLY (GOOGLE TRENDS DISABLED)')
     try:
         log.info('STARTUP STEP 1: loading config from %s (cwd=%s)', args.config, os.getcwd())
         cfg = yaml.safe_load(Path(args.config).read_text())
