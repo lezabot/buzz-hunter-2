@@ -5,28 +5,28 @@ universe_limit: 100
 watchlist: [BTC-USD, ETH-USD, SOL-USD, DOGE-USD, PEPE-USD]
 new_listing_days: 45
 risk:
-  trade_usd: 125
+  trade_usd: 75
   max_positions: 3
-  max_exposure_usd: 450
-  max_daily_loss_usd: 50
+  max_exposure_usd: 225
+  max_daily_loss_usd: 35
   stop_loss_pct: 0.035
   take_profit_pct: 0.06
   trailing_stop_pct: 0.035
   assumed_fee_pct_per_side: 0.006
   assumed_slippage_pct_per_side: 0.003
-  max_spread_pct: 0.015
+  max_spread_pct: 0.0075
   min_24h_quote_volume_usd: 1000000
   max_entry_price_change_24h_pct: 35
 signals:
-  minimum_score: 68
+  minimum_score: 75
   cooldown_hours: 6
   min_history_points: 12
   volume_spike_checks_per_scan: 12
   volume_spike_threshold_pct: 200
   volume_spike_bonus_points: 15
-  momentum_weight: 30
-  volume_weight: 25
-  volatility_weight: 45
+  momentum_weight: 45
+  volume_weight: 40
+  volatility_weight: 15
 advanced_signals:
   enabled: true
   max_confirmation_checks_per_scan: 5
