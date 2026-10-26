@@ -54,4 +54,14 @@ def entry_rejection_reasons(signal, market, config):
         reasons.append('24h_volume_below_minimum')
     if float(market['spread_pct']) > float(r['max_spread_pct']):
         reasons.append('spread_too_wide')
+    advanced = config.get('advanced_signals', {})
+    if advanced.get('enabled', False):
+        confirmation = market.get('confirmation')
+        if confirmation is None:
+            reasons.append('momentum_confirmation_unavailable')
+        else:
+            for key, minimum in [('rvol', 'min_rvol'), ('momentum_5m_pct', 'min_momentum_5m_pct'), ('momentum_15m_pct', 'min_momentum_15m_pct'), ('vwap_gap_pct', 'min_vwap_gap_pct'), ('depth_ratio', 'min_bid_ask_depth_ratio')]:
+                if confirmation[key] < float(advanced[minimum]): reasons.append(key + '_below_minimum')
+            if confirmation['momentum_5m_pct'] > float(advanced['max_momentum_5m_pct']): reasons.append('momentum_5m_overextended')
+            if confirmation['vwap_gap_pct'] > float(advanced['max_vwap_gap_pct']): reasons.append('vwap_overextended')
     return reasons
