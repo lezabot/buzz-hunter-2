@@ -69,7 +69,16 @@ def scan(cfg, feed, trends, portfolio, status_path):
     advanced = cfg.get('advanced_signals', {})
     if advanced.get('enabled', False):
         max_checks = int(advanced.get('max_confirmation_checks_per_scan', 5))
-        preliminary = [(score, symbol, signal, m) for score, symbol, signal, m in candidates if not entry_rejection_reasons(signal, m, {**cfg, 'advanced_signals': {'enabled': False}})]
+        # Collect confirmation for plausible sub-$1 candidates even when the
+        # 24-hour change filter rejects them. Otherwise a fast-moving coin
+        # never gets confirmation data and diagnostics misleadingly report
+        # momentum as unavailable.
+        risk = cfg['risk']
+        preliminary = [(score, symbol, signal, m) for score, symbol, signal, m in candidates
+                       if score >= float(cfg['signals']['minimum_score'])
+                       and 0 < m['price'] * (1 + float(risk['assumed_slippage_pct_per_side'])) < 1
+                       and m['volume_usd_24h'] >= float(risk['min_24h_quote_volume_usd'])
+                       and m['spread_pct'] <= float(risk['max_spread_pct'])]
         for _, symbol, _, m in preliminary[:max_checks]:
             try:
                 m['confirmation'] = feed.confirmation(symbol)
