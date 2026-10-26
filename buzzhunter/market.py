@@ -67,18 +67,39 @@ class CoinbaseFeed:
         return (sum(recent) / baseline - 1) * 100 if baseline > 0 else None
 
     def confirmation(self, symbol):
+        # Coinbase may omit minutes with no trades. Do not manufacture candles.
         now = int(time.time() // 60) * 60
         fmt = lambda t: time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))
-        rows = self.get('/products/' + symbol + '/candles', params={'granularity': 60, 'start': fmt(now-32*60), 'end': fmt(now)})
-        candles = sorted((r for r in rows if len(r)>=6 and int(r[0]) < now), key=lambda r:r[0])
-        if len(candles)<30: return None
-        candles=candles[-30:]
-        closes=[float(r[4]) for r in candles]
-        volumes=[float(r[5]) for r in candles]
-        recent=sum(volumes[-5:]); baseline=sum(volumes[:-5])/5
-        vwap=sum(float(r[4])*float(r[5]) for r in candles)/max(sum(volumes),1e-12)
-        book=self.get('/products/'+symbol+'/book',params={'level':2})
-        bid_depth=sum(float(x[1]) for x in book.get('bids',[])[:10])
-        ask_depth=sum(float(x[1]) for x in book.get('asks',[])[:10])
-        if baseline<=0 or ask_depth<=0 or closes[-6]<=0 or closes[-16]<=0 or vwap<=0: return None
-        return {'rvol':recent/baseline,'momentum_5m_pct':100*(closes[-1]/closes[-6]-1),'momentum_15m_pct':100*(closes[-1]/closes[-16]-1),'vwap_gap_pct':100*(closes[-1]/vwap-1),'depth_ratio':bid_depth/ask_depth}
+        rows = self.get('/products/' + symbol + '/candles',
+                        params={'granularity': 60, 'start': fmt(now-33*60), 'end': fmt(now)})
+        by_time = {int(r[0]): r for r in rows if len(r) >= 6 and int(r[0]) < now}
+        expected = [now - 60*i for i in range(30, 0, -1)]
+        missing = [t for t in expected if t not in by_time]
+        if missing:
+            log.info('CONFIRMATION SKIPPED %s: missing %d of 30 complete minute candles', symbol, len(missing))
+            return None
+        candles = [by_time[t] for t in expected]
+        closes = [float(r[4]) for r in candles]
+        volumes = [float(r[5]) for r in candles]
+        recent = sum(volumes[-5:])
+        baseline = sum(volumes[:-5]) / 5
+        total_volume = sum(volumes)
+        if baseline <= 0 or total_volume <= 0 or closes[-6] <= 0 or closes[-16] <= 0:
+            log.info('CONFIRMATION SKIPPED %s: insufficient volume or invalid candle prices', symbol)
+            return None
+        vwap = sum(float(r[4])*float(r[5]) for r in candles) / total_volume
+        book = self.get('/products/'+symbol+'/book', params={'level':2})
+        bid_depth = sum(float(x[1]) for x in book.get('bids',[])[:10])
+        ask_depth = sum(float(x[1]) for x in book.get('asks',[])[:10])
+        if ask_depth <= 0 or vwap <= 0:
+            log.info('CONFIRMATION SKIPPED %s: insufficient order-book depth or VWAP', symbol)
+            return None
+        result = {'rvol': recent/baseline,
+                  'momentum_5m_pct': 100*(closes[-1]/closes[-6]-1),
+                  'momentum_15m_pct': 100*(closes[-1]/closes[-16]-1),
+                  'vwap_gap_pct': 100*(closes[-1]/vwap-1),
+                  'depth_ratio': bid_depth/ask_depth}
+        log.info('CONFIRMATION READY %s rvol=%.2f momentum5m=%.2f momentum15m=%.2f depth=%.2f',
+                 symbol, result['rvol'], result['momentum_5m_pct'],
+                 result['momentum_15m_pct'], result['depth_ratio'])
+        return result
