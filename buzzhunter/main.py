@@ -67,6 +67,7 @@ def scan(cfg, feed, trends, portfolio, status_path):
                   for _, symbol, _, m in candidates]
     candidates.sort(reverse=True, key=lambda row: row[0])
     advanced = cfg.get('advanced_signals', {})
+    confirmed_symbols = set()
     if advanced.get('enabled', False):
         max_checks = int(advanced.get('max_confirmation_checks_per_scan', 5))
         # Collect confirmation for plausible sub-$1 candidates even when the
@@ -82,10 +83,14 @@ def scan(cfg, feed, trends, portfolio, status_path):
         for _, symbol, _, m in preliminary[:max_checks]:
             try:
                 m['confirmation'] = feed.confirmation(symbol)
+                confirmed_symbols.add(symbol)
             except Exception as exc:
                 log.warning('Confirmation unavailable %s: %s', symbol, exc)
     for score, symbol, signal, m in candidates[:10]:
         reasons = entry_rejection_reasons(signal, m, cfg)
+        if advanced.get('enabled', False) and symbol not in confirmed_symbols:
+            reasons = [r for r in reasons if r != 'momentum_confirmation_unavailable']
+            reasons.append('confirmation_not_requested_preliminary_filters')
         log.info('CANDIDATE %s score=%.1f price=%.8f volume24h=%.0f spread=%.4f change24h=%.2f spike15m=%s eligible=%s reasons=%s',
                  symbol, score, m['price'], m['volume_usd_24h'], m['spread_pct'],
                  m['change_24h_pct'], m.get('volume_spike_pct'), not reasons, reasons)
