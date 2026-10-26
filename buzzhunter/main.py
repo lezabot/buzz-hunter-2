@@ -66,6 +66,15 @@ def scan(cfg, feed, trends, portfolio, status_path):
     candidates = [(evaluate(m, config=cfg).score, symbol, evaluate(m, config=cfg), m)
                   for _, symbol, _, m in candidates]
     candidates.sort(reverse=True, key=lambda row: row[0])
+    advanced = cfg.get('advanced_signals', {})
+    if advanced.get('enabled', False):
+        max_checks = int(advanced.get('max_confirmation_checks_per_scan', 5))
+        preliminary = [(score, symbol, signal, m) for score, symbol, signal, m in candidates if not entry_rejection_reasons(signal, m, {**cfg, 'advanced_signals': {'enabled': False}})]
+        for _, symbol, _, m in preliminary[:max_checks]:
+            try:
+                m['confirmation'] = feed.confirmation(symbol)
+            except Exception as exc:
+                log.warning('Confirmation unavailable %s: %s', symbol, exc)
     for score, symbol, signal, m in candidates[:10]:
         reasons = entry_rejection_reasons(signal, m, cfg)
         log.info('CANDIDATE %s score=%.1f price=%.8f volume24h=%.0f spread=%.4f change24h=%.2f spike15m=%s eligible=%s reasons=%s',
