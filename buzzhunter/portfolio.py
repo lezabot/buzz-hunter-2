@@ -41,12 +41,16 @@ class PaperPortfolio:
 
     def buy(self, symbol, price, prices, now):
         r = self.risk
+        # Independent paper-broker safeguard: never open a position at $1 or more.
+        # Exits remain unrestricted, including sales above $1.
+        execution = float(price) * (1 + float(r['assumed_slippage_pct_per_side']))
+        if not (0 < float(price) < 1 and 0 < execution < 1):
+            return False
         if symbol in self.state['positions'] or len(self.state['positions']) >= r['max_positions'] or self.halted(prices):
             return False
         exposure = sum(p['quantity'] * prices.get(s,p['entry_price']) for s,p in self.state['positions'].items())
         amount = min(r['trade_usd'], self.state['cash'] / (1+r['assumed_fee_pct_per_side']), r['max_exposure_usd']-exposure)
         if amount < 10: return False
-        execution = price * (1+r['assumed_slippage_pct_per_side'])
         fee = amount * r['assumed_fee_pct_per_side']
         qty = amount / execution
         self.state['cash'] -= amount + fee
