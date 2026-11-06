@@ -12,4 +12,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install PyYAML requests
-      - run: cp -a . ../buzzhunterpkg && cd .. && python -m unittest buzzhunterpkg.test_paper_safety -v
+      - run: python -m unittest discover -s tests -v
